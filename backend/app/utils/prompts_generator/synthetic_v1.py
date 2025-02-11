@@ -6,11 +6,15 @@ from langchain_core.prompts import ChatPromptTemplate
 from langchain_openai import ChatOpenAI
 from langchain_mistralai import ChatMistralAI
 from langchain_ollama import ChatOllama
+from app.utils.llm.embeddings import calculate_embedding_similarities, get_embeddings
+from app.models.prompt import Prompt
 
-from .prompts_crud import create_prompt
+
+THRESHOLD = 0.8
 
 class SyntheticPrompts(BaseModel):
     prompts: list[str] = Field(description="List of sample data entries")
+
 
 class SyntheticDataGenerator:
     def __init__(self):
@@ -39,18 +43,32 @@ class SyntheticDataGenerator:
 
         # Generate structured output using Pydantic model
         structured_llm = self.llm.with_structured_output(SyntheticPrompts)
-        prompt = f"Generate {num_prompts} prompts. " + system_prompt + "\n" + " ".join(sample_prompts)
+        prompt = f"Generate {num_prompts} prompts. " + system_prompt + "\n" + sample_prompts
         synthetic_prompts = structured_llm.invoke(prompt)
         
-        for prompt in synthetic_prompts.prompts:
-            project = os.getenv("PROJECT")
-            payload = {
-                "id": Binary.from_uuid(uuid.uuid4()),
-                "prompt": prompt,
-                "project": project
-            }
-            create_prompt(payload)
-        return synthetic_prompts
+        synthetic_embeddings = get_embeddings(synthetic_prompts.prompts)
+        db_embeddings = Prompt.get_all_embeddings()
+        # Handle the case when there are no entries in the db
+        if db_embeddings.size == 0:
+            unique_indices = list(range(len(synthetic_prompts.prompts)))
+        
+        else:
+            unique_indices = calculate_embedding_similarities(
+                synthetic_embeddings, db_embeddings, THRESHOLD
+            )
+
+        for i in unique_indices:
+            prompt = synthetic_prompts.prompts[i]
+            Prompt.create_prompt(
+                {
+                    "content": prompt,
+                    "embeddings": synthetic_embeddings[i].tolist(),
+                    "tags": ["synthetic"],
+                    "project": "67a9b4465a4ef2bdd95cc95c"
+                }
+            )
+
+        return [synthetic_prompts.prompts[i] for i in unique_indices]
 
 
 if __name__ == "__main__":
@@ -61,9 +79,8 @@ Phone travels to the side while rotating. duration 7 seconds
 Phone oscillates just above the podium maintaining the centre position and rotates from left to right. Animation continues for 7 seconds
 Phone tilts back and forth while positioned at the origin. duration 7 seconds
 """
-    system_prompt = "You are a marketing person. You are tasked to create a marketing campain to increase the sales of mibile phones. You have a tool at your disposal using which phone advertisement videos can be created using simple text prompts. The text input to this tool should describe only the animation of the phone and no other details. Using the below prompts as few examples, please generate more prompts which I can use with my tool."
+    system_prompt = "You are a marketing person. You are tasked to create a marketing campain to increase the sales of mobile phones. You have a tool at your disposal using which phone advertisement videos can be created using simple text prompts. The text input to this tool should describe only the animation of the phone and no other details. Using the below prompts as few examples, please generate more prompts which I can use with my tool. Make sure the created twxt prompt is well formatted."
     generated_data = generator.generate_batch(samples, system_prompt, 10)
     print(type(generated_data))
     for sample in generated_data.samples:
         print(sample)
-
