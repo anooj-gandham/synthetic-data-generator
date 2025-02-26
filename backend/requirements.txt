@@ -1,0 +1,22 @@
+Flask
+pymongo
+dnspython
+flask_pymongo
+python-dotenv
+numpy
+openai
+scipy
+sentence-transformers
+from sentence_transformers import SentenceTransformer
+
+# Load the pre-trained model
+model = SentenceTransformer('all-MiniLM-L6-v2')
+
+# Define your sentence
+sentence = "This is an example sentence."
+
+# Generate the embedding
+embedding = model.encode(sentence)
+
+# Display the embedding
+print(embedding)
